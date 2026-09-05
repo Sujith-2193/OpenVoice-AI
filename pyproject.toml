@@ -1,9 +1,9 @@
 [project]
 name = "openvoice-ai"
 version = "0.1.0"
-description = "Add your description here"
+description = "Real-time multi-agent voice AI assistant"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "faster-whisper>=1.2.1",
     "langchain>=1.2.10",
