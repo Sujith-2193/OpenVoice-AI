@@ -1,3 +1,4 @@
+import json
 import os
 from langchain_core.messages import SystemMessage
 from langchain.chat_models import init_chat_model
@@ -7,6 +8,8 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import InjectedToolCallId
 from typing import Annotated
 from dotenv import load_dotenv, find_dotenv
+
+from src.data.store import get_store
 
 load_dotenv(find_dotenv())
 
@@ -50,8 +53,18 @@ When you receive a user from another agent:
 
 @tool
 def search_catalog(query: str) -> str:
-    """Search the product catalog for items matching the query."""
-    return f"I found 3 items matching '{query}': A red shirt for $20, blue jeans for $40, and black shoes for $60."
+    """Search the persistent product catalog for items matching the query."""
+    try:
+        products = get_store().search_products(query)
+    except Exception as exc:
+        return f"Catalog search is temporarily unavailable: {type(exc).__name__}."
+    if not products:
+        return f"I couldn't find any products matching '{query}'."
+    results = [
+        f"{p['name']} ({p['currency']} {p['price']}, SKU {p['sku']})"
+        for p in products
+    ]
+    return "I found " + "; ".join(results) + "."
 
 
 @tool
@@ -64,13 +77,8 @@ def transfer_to_customer_care(
         update={
             "active_agent": "CustomerCare",
             "messages": [
-                ToolMessage(
-                    content="Successfully transferred to Customer Care.",
-                    tool_call_id=tool_call_id,
-                ),
-                SystemMessage(
-                    content="[SYSTEM]: You just received a handoff from another agent. The user is now talking to YOU, the Customer Care agent. Do NOT say 'I can't help with that' or acknowledge the transfer. Look at their return/complaint/policy request and start helping them immediately."
-                ),
+                ToolMessage(content="Successfully transferred to Customer Care.", tool_call_id=tool_call_id),
+                SystemMessage(content="[SYSTEM]: You just received a handoff from another agent. The user is now talking to YOU, the Customer Care agent. Do NOT say 'I can't help with that' or acknowledge the transfer. Look at their return/complaint/policy request and start helping them immediately."),
             ],
         },
     )
@@ -84,13 +92,8 @@ def transfer_to_order_ops(tool_call_id: Annotated[str, InjectedToolCallId]) -> C
         update={
             "active_agent": "OrderOps",
             "messages": [
-                ToolMessage(
-                    content="Successfully transferred to Order Operations.",
-                    tool_call_id=tool_call_id,
-                ),
-                SystemMessage(
-                    content="[SYSTEM]: You just received a handoff from another agent. The user is now talking to YOU, the Order Operations agent. Do NOT say 'I can't help with that' or acknowledge the transfer. Look at their order tracking request and start helping them immediately."
-                ),
+                ToolMessage(content="Successfully transferred to Order Operations.", tool_call_id=tool_call_id),
+                SystemMessage(content="[SYSTEM]: You just received a handoff from another agent. The user is now talking to YOU, the Order Operations agent. Do NOT say 'I can't help with that' or acknowledge the transfer. Look at their order tracking request and start helping them immediately."),
             ],
         },
     )
@@ -98,7 +101,9 @@ def transfer_to_order_ops(tool_call_id: Annotated[str, InjectedToolCallId]) -> C
 
 def get_shopper_agent(model_name=None, model_provider=None):
     llm = init_chat_model(
-        model="gpt-4o-mini", model_provider="openai", temperature=0.3
+        model=model_name or os.getenv("OPENVOICE_AGENT_MODEL", "gpt-4o-mini"),
+        model_provider=model_provider or os.getenv("OPENVOICE_AGENT_PROVIDER", "openai"),
+        temperature=0.3,
     )
 
     tools = [search_catalog, transfer_to_customer_care, transfer_to_order_ops]
