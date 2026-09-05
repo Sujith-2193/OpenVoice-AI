@@ -106,12 +106,6 @@ export function useAudio() {
     setIsCapturing(false);
   }, []);
 
-  /**
-   * Temporarily mute mic capture by disconnecting the processor.
-   * The mic stream stays open so resume is instant (no getUserMedia delay).
-   * This prevents the AI's playback audio from leaking back through
-   * speakers → mic → backend, which is the root cause of double-voice.
-   */
   const muteCapture = useCallback(() => {
     if (workletNodeRef.current) {
       const { source, processor } = workletNodeRef.current;
@@ -123,9 +117,6 @@ export function useAudio() {
     }
   }, []);
 
-  /**
-   * Resume mic capture after AI playback finishes.
-   */
   const unmuteCapture = useCallback(() => {
     if (workletNodeRef.current) {
       const { source, processor } = workletNodeRef.current;
@@ -137,11 +128,6 @@ export function useAudio() {
     }
   }, []);
 
-  /**
-   * Gapless audio playback: schedule chunks at precise future timestamps
-   * so there are no micro-gaps between sequential audio segments.
-   * Track ALL active sources so barge-in can stop them all.
-   */
   const nextPlaybackTimeRef = useRef(0);
   const activeSourcesRef = useRef(new Set());
 
@@ -157,7 +143,7 @@ export function useAudio() {
     if (!isPlayingRef.current || nextPlaybackTimeRef.current < now) {
       nextPlaybackTimeRef.current = now;
     }
-    
+
     isPlayingRef.current = true;
     setIsPlaying(true);
 
@@ -219,13 +205,11 @@ export function useAudio() {
   const clearPlaybackQueue = useCallback(() => {
     playbackQueueRef.current = [];
     nextPlaybackTimeRef.current = 0;
-    // Stop ALL pre-scheduled sources, not just the last one
     for (const src of activeSourcesRef.current) {
       try {
-        src.onended = null;
         src.stop();
       } catch {
-        // Already stopped
+        // Already stopped.
       }
     }
     activeSourcesRef.current.clear();
