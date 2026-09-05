@@ -8,6 +8,8 @@ from langchain_core.tools import InjectedToolCallId
 from typing import Annotated
 from dotenv import load_dotenv, find_dotenv
 
+from src.data.store import get_store
+
 load_dotenv(find_dotenv())
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -37,7 +39,7 @@ TRANSFERS (only for things outside your responsibilities):
 - If the user asks about returns, refunds, policies, or complaints, ask if they'd like to be transferred to Customer Care. If they agree, call transfer_to_customer_care immediately.
 - If the user wants to browse or search for products, ask if they'd like to be transferred to the Shopper agent. If they agree, call transfer_to_shopper immediately.
 - If the user explicitly asks to be switched to another agent by name, just do it.
-- Transfer silently. Do NOT announce or narrate the transfer. Just call the function.
+- Transfer silently. Do NOT announce or narrate the transfer.
 
 RECEIVING A HANDOFF:
 When you receive a user from another agent:
@@ -49,27 +51,28 @@ When you receive a user from another agent:
 
 @tool
 def check_order_status(order_id: str = "latest") -> str:
-    """Check the shipping status of an order."""
-    return "Your latest order is currently out for delivery and should arrive by 8 PM tonight."
+    """Look up a real order record by ID, or the latest seeded order in development."""
+    try:
+        order = get_store().get_order(order_id)
+    except Exception as exc:
+        return f"Order lookup is temporarily unavailable: {type(exc).__name__}."
+    if not order:
+        return f"I couldn't find an order with ID {order_id}."
+    status = str(order.get("status", "unknown")).replace("_", " ")
+    eta = order.get("estimated_delivery", "an updated delivery estimate")
+    return f"Order {order['order_id']} is {status}. The current delivery estimate is {eta}."
 
 
 @tool
-def transfer_to_customer_care(
-    tool_call_id: Annotated[str, InjectedToolCallId],
-) -> Command:
+def transfer_to_customer_care(tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """Transfer the user to the Customer Care agent. Use this for general policies, returns, and complaints."""
     return Command(
         goto="CustomerCare",
         update={
             "active_agent": "CustomerCare",
             "messages": [
-                ToolMessage(
-                    content="Successfully transferred to Customer Care.",
-                    tool_call_id=tool_call_id,
-                ),
-                SystemMessage(
-                    content="[SYSTEM]: You just received a handoff from another agent. The user is now talking to YOU, the Customer Care agent. Do NOT say 'I can't help with that' or acknowledge the transfer. Look at their return/complaint/policy request and start helping them immediately."
-                ),
+                ToolMessage(content="Successfully transferred to Customer Care.", tool_call_id=tool_call_id),
+                SystemMessage(content="[SYSTEM]: You just received a handoff from another agent. The user is now talking to YOU, the Customer Care agent. Do NOT say 'I can't help with that' or acknowledge the transfer. Look at their return/complaint/policy request and start helping them immediately."),
             ],
         },
     )
@@ -83,13 +86,8 @@ def transfer_to_shopper(tool_call_id: Annotated[str, InjectedToolCallId]) -> Com
         update={
             "active_agent": "Shopper",
             "messages": [
-                ToolMessage(
-                    content="Successfully transferred to Shopper.",
-                    tool_call_id=tool_call_id,
-                ),
-                SystemMessage(
-                    content="[SYSTEM]: You just received a handoff from another agent. The user is now talking to YOU, the Shopper agent. Do NOT say 'I can't help with that' or acknowledge the transfer. Look at what they want to buy and start helping them immediately."
-                ),
+                ToolMessage(content="Successfully transferred to Shopper.", tool_call_id=tool_call_id),
+                SystemMessage(content="[SYSTEM]: You just received a handoff from another agent. The user is now talking to YOU, the Shopper agent. Do NOT say 'I can't help with that' or acknowledge the transfer. Look at what they want to buy and start helping them immediately."),
             ],
         },
     )
@@ -97,7 +95,9 @@ def transfer_to_shopper(tool_call_id: Annotated[str, InjectedToolCallId]) -> Com
 
 def get_order_ops_agent(model_name=None, model_provider=None):
     llm = init_chat_model(
-        model="gpt-4o-mini", model_provider="openai", temperature=0
+        model=model_name or os.getenv("OPENVOICE_AGENT_MODEL", "gpt-4o-mini"),
+        model_provider=model_provider or os.getenv("OPENVOICE_AGENT_PROVIDER", "openai"),
+        temperature=0,
     )
 
     tools = [check_order_status, transfer_to_customer_care, transfer_to_shopper]
