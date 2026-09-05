@@ -20,8 +20,6 @@ export function useVoicePipeline() {
     isUserSpeaking,
     startCapture,
     stopCapture,
-    muteCapture,
-    unmuteCapture,
     playAudioChunk,
     clearPlaybackQueue,
   } = useAudio();
