@@ -9,12 +9,16 @@ overwritten.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
 
+from dotenv import find_dotenv, load_dotenv
 from pymongo import ASCENDING, MongoClient
 from pymongo.collection import Collection
+
+load_dotenv(find_dotenv())
 
 DATABASE_URL = os.getenv("DATABASE_URL", "mongodb://localhost:27017/")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "openvoice")
@@ -68,9 +72,13 @@ class BusinessDataStore:
         tokens = [token for token in query.strip().split() if token]
         if not tokens:
             return []
-        pattern = "|".join(__import__("re").escape(token) for token in tokens)
+        pattern = "|".join(re.escape(token) for token in tokens)
         cursor = self.products.find(
-            {"$or": [{"name": {"$regex": pattern, "$options": "i"}}, {"category": {"$regex": pattern, "$options": "i"}}, {"colors": {"$regex": pattern, "$options": "i"}}]},
+            {"$or": [
+                {"name": {"$regex": pattern, "$options": "i"}},
+                {"category": {"$regex": pattern, "$options": "i"}},
+                {"colors": {"$regex": pattern, "$options": "i"}},
+            ]},
             {"_id": 0},
         ).limit(limit)
         return list(cursor)
